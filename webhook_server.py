@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="PocketAgent Monetization & License Server", version="1.0.0")
@@ -17,27 +18,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DB_PATH = "licenses.db"
+# Use /tmp on Vercel Serverless environment because /var/task is read-only
+if os.environ.get("VERCEL") or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+    DB_PATH = "/tmp/licenses.db"
+else:
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "licenses.db")
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    return conn
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS licenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            license_key TEXT UNIQUE NOT NULL,
-            product_id TEXT NOT NULL,
-            product_name TEXT NOT NULL,
-            customer_email TEXT,
-            customer_name TEXT,
-            credits_remaining INTEGER NOT NULL,
-            tier TEXT NOT NULL,
-            status TEXT NOT NULL DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS licenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                license_key TEXT UNIQUE NOT NULL,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL,
+                customer_email TEXT,
+                customer_name TEXT,
+                credits_remaining INTEGER NOT NULL,
+                tier TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB INIT ERROR]: {e}")
 
 init_db()
 
@@ -54,9 +66,39 @@ def generate_license_key(prefix="PKT"):
     random_part = secrets.token_hex(6).upper()
     return f"{prefix}-{random_part[:4]}-{random_part[4:8]}-{random_part[8:]}"
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def root():
-    return {"status": "online", "service": "PocketAgent License & Webhook Server"}
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>PocketAgent Cloud Monetization & License Engine</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-950 text-gray-100 flex items-center justify-center min-h-screen font-sans">
+        <div class="max-w-lg w-full bg-gray-900 border border-gray-800 rounded-3xl p-8 text-center shadow-2xl">
+            <div class="w-12 h-12 rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 flex items-center justify-center mx-auto text-xl font-bold">
+                ⚡
+            </div>
+            <h1 class="text-xl font-black text-white mt-4">PocketAgent Cloud Webhook Engine</h1>
+            <p class="text-xs text-gray-400 mt-2">Serverless FastAPI service running on Vercel Edge.</p>
+            <div class="mt-6 p-4 rounded-2xl bg-gray-950 border border-cyan-500/30 text-left text-xs font-mono">
+                <div class="text-cyan-400 font-bold mb-1">Active Endpoints:</div>
+                <div class="text-gray-300">POST /api/webhook/dodo</div>
+                <div class="text-gray-300">POST /api/license/verify</div>
+            </div>
+            <div class="mt-6 flex items-center justify-center gap-2 text-[11px] text-emerald-400 font-mono">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> System Operational & Healthy
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+
+@app.get("/api/health")
+def health():
+    return {"status": "healthy", "service": "PocketAgent Cloud Webhook & License API"}
 
 @app.post("/api/webhook/dodo")
 async def dodo_webhook(request: Request):
@@ -64,32 +106,32 @@ async def dodo_webhook(request: Request):
     Webhook handler for Dodo Payments live callbacks
     Event: payment.succeeded / subscription.active
     """
+    init_db()
     try:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    event_type = payload.get("type") or payload.get("event") or "payment.succeeded"
     data = payload.get("data", {})
-    
-    # Extract details
     product_id = data.get("product_id") or data.get("product", {}).get("product_id") or "pdt_0NlgHtNsDlqTjbFUwWUn0"
     customer = data.get("customer", {})
     email = customer.get("email", "customer@pocketagent.ai")
     name = customer.get("name", "Valued Customer")
 
     tier_info = PRODUCT_TIERS.get(product_id, {"name": "Custom Tier", "credits": 1000, "tier": "standard"})
-    
     license_key = generate_license_key()
     
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO licenses (license_key, product_id, product_name, customer_email, customer_name, credits_remaining, tier, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-    """, (license_key, product_id, tier_info["name"], email, name, tier_info["credits"], tier_info["tier"]))
-    conn.commit()
-    conn.close()
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO licenses (license_key, product_id, product_name, customer_email, customer_name, credits_remaining, tier, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+        """, (license_key, product_id, tier_info["name"], email, name, tier_info["credits"], tier_info["tier"]))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"[DB INSERT ERROR]: {e}")
 
     print(f"[DODO PAYMENT SUCCESS] Issued License: {license_key} for {email} ({tier_info['name']}) with {tier_info['credits']} credits.")
 
@@ -105,12 +147,16 @@ class LicenseVerifyRequest(BaseModel):
 
 @app.post("/api/license/verify")
 def verify_license(req: LicenseVerifyRequest):
+    init_db()
     key = req.license_key.strip()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT license_key, product_name, credits_remaining, tier, status FROM licenses WHERE license_key = ?", (key,))
-    row = cursor.fetchone()
-    conn.close()
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT license_key, product_name, credits_remaining, tier, status FROM licenses WHERE license_key = ?", (key,))
+        row = cursor.fetchone()
+        conn.close()
+    except Exception as e:
+        return {"valid": False, "message": f"Database error: {e}"}
 
     if not row:
         return {"valid": False, "message": "License Key not found."}
