@@ -2,21 +2,9 @@ import os
 import sqlite3
 import secrets
 import json
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse
-from pydantic import BaseModel
+from flask import Flask, request, jsonify, render_template_string
 
-# Standard FastAPI app for Vercel
-app = FastAPI(title="PocketAgent Cloud Engine", version="1.0.0")
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app = Flask(__name__)
 
 DB_PATH = "/tmp/licenses.db"
 
@@ -59,50 +47,52 @@ def generate_license_key(prefix="PKT"):
     random_part = secrets.token_hex(6).upper()
     return f"{prefix}-{random_part[:4]}-{random_part[4:8]}-{random_part[8:]}"
 
-@app.get("/", response_class=HTMLResponse)
-@app.get("/api", response_class=HTMLResponse)
-@app.get("/api/index", response_class=HTMLResponse)
-def root():
-    return """
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>PocketAgent Cloud Monetization Engine</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-    </head>
-    <body class="bg-[#090d16] text-gray-100 flex items-center justify-center min-h-screen font-sans">
-        <div class="max-w-md w-full bg-gray-900/90 border border-cyan-500/30 rounded-3xl p-8 text-center shadow-2xl shadow-cyan-500/10">
-            <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-black font-black text-2xl mx-auto shadow-lg shadow-cyan-500/30">
-                ⚡
-            </div>
-            <h1 class="text-xl font-black text-white mt-4 tracking-tight">PocketAgent Cloud Engine</h1>
-            <p class="text-xs text-gray-400 mt-1">Global Webhook & License Authentication Service</p>
-            <div class="mt-6 p-4 rounded-2xl bg-black/60 border border-gray-800 text-left text-xs font-mono">
-                <div class="text-cyan-400 font-bold mb-2">⚡ Active Cloud Endpoints:</div>
-                <div class="text-emerald-400 flex items-center gap-1.5 mb-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> POST /api/webhook/dodo</div>
-                <div class="text-emerald-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> POST /api/license/verify</div>
-            </div>
-            <div class="mt-6 text-[11px] text-gray-500 font-mono">
-                Running on Vercel Serverless Edge • 100% Operational
-            </div>
+LANDING_HTML = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PocketAgent Cloud Monetization Engine</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#090d16] text-gray-100 flex items-center justify-center min-h-screen font-sans">
+    <div class="max-w-md w-full bg-gray-900/90 border border-cyan-500/30 rounded-3xl p-8 text-center shadow-2xl shadow-cyan-500/10">
+        <div class="w-14 h-14 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-black font-black text-2xl mx-auto shadow-lg shadow-cyan-500/30">
+            ⚡
         </div>
-    </body>
-    </html>
-    """
+        <h1 class="text-xl font-black text-white mt-4 tracking-tight">PocketAgent Cloud Engine</h1>
+        <p class="text-xs text-gray-400 mt-1">Global Webhook & License Authentication Service</p>
+        <div class="mt-6 p-4 rounded-2xl bg-black/60 border border-gray-800 text-left text-xs font-mono">
+            <div class="text-cyan-400 font-bold mb-2">⚡ Active Cloud Endpoints:</div>
+            <div class="text-emerald-400 flex items-center gap-1.5 mb-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> POST /api/webhook/dodo</div>
+            <div class="text-emerald-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> POST /api/license/verify</div>
+        </div>
+        <div class="mt-6 text-[11px] text-gray-500 font-mono">
+            Running on Vercel Serverless Edge • 100% Operational
+        </div>
+    </div>
+</body>
+</html>
+"""
 
-@app.get("/api/health")
+@app.route("/", methods=["GET"])
+@app.route("/api", methods=["GET"])
+@app.route("/api/index", methods=["GET"])
+def root():
+    return render_template_string(LANDING_HTML)
+
+@app.route("/api/health", methods=["GET"])
 def health():
-    return {"status": "healthy", "service": "PocketAgent Cloud Webhook & License API"}
+    return jsonify({"status": "healthy", "service": "PocketAgent Cloud Webhook & License API"})
 
-@app.post("/api/webhook/dodo")
-async def dodo_webhook(request: Request):
+@app.route("/api/webhook/dodo", methods=["POST"])
+def dodo_webhook():
     init_db()
     try:
-        payload = await request.json()
+        payload = request.get_json(force=True, silent=True) or {}
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        return jsonify({"error": "Invalid JSON payload"}), 400
 
     data = payload.get("data", {})
     product_id = data.get("product_id") or data.get("product", {}).get("product_id") or "pdt_0NlgHtNsDlqTjbFUwWUn0"
@@ -125,20 +115,21 @@ async def dodo_webhook(request: Request):
     except Exception as e:
         print(f"[DB INSERT ERROR]: {e}")
 
-    return {
+    return jsonify({
         "status": "success",
         "message": "License generated and issued.",
         "license_key": license_key,
         "credits": tier_info["credits"]
-    }
+    })
 
-class LicenseVerifyRequest(BaseModel):
-    license_key: str
-
-@app.post("/api/license/verify")
-def verify_license(req: LicenseVerifyRequest):
+@app.route("/api/license/verify", methods=["POST"])
+def verify_license():
     init_db()
-    key = req.license_key.strip()
+    data = request.get_json(force=True, silent=True) or {}
+    key = data.get("license_key", "").strip()
+    if not key:
+        return jsonify({"valid": False, "message": "License Key is required."}), 400
+
     try:
         conn = get_db()
         cursor = conn.cursor()
@@ -146,20 +137,23 @@ def verify_license(req: LicenseVerifyRequest):
         row = cursor.fetchone()
         conn.close()
     except Exception as e:
-        return {"valid": False, "message": f"Database error: {e}"}
+        return jsonify({"valid": False, "message": f"Database error: {e}"})
 
     if not row:
-        return {"valid": False, "message": "License Key not found."}
+        return jsonify({"valid": False, "message": "License Key not found."})
 
     lic_key, prod_name, credits, tier, status = row
     if status != "active":
-        return {"valid": False, "message": f"License is currently {status}."}
+        return jsonify({"valid": False, "message": f"License is currently {status}."})
 
-    return {
+    return jsonify({
         "valid": True,
         "license_key": lic_key,
         "product_name": prod_name,
         "credits_remaining": credits,
         "tier": tier,
         "status": status
-    }
+    })
+
+if __name__ == "__main__":
+    app.run(port=8000)
