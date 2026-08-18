@@ -8,6 +8,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
+try:
+    from mangum import Mangum
+except ImportError:
+    Mangum = None
+
 # FastAPI ASGI Instance for Vercel
 app = FastAPI(title="PocketAgent Cloud Engine", version="1.0.0")
 
@@ -164,3 +169,9 @@ def verify_license(req: LicenseVerifyRequest):
         "tier": tier,
         "status": status
     }
+
+# Mangum serverless handler for AWS Lambda / Vercel Python runtime
+if Mangum is not None:
+    handler = Mangum(app, lifespan="off")
+else:
+    handler = app
