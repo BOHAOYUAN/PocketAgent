@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PocketAgent — Autonomous Mobile Operating Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulse-glow {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.03); }
+    }
+    .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scroll::-webkit-scrollbar-track { background: #0f172a; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    .highlight-box {
+      border: 2px solid #06b6d4;
+      background: rgba(6, 182, 212, 0.2);
+      position: absolute;
+      pointer-events: none;
+      transition: all 0.2s ease-in-out;
+      border-radius: 4px;
+      z-index: 10;
+    }
+  </style>
+</head>
+<body class="bg-[#090d16] text-gray-100 font-sans min-h-screen flex flex-col selection:bg-cyan-500 selection:text-black">
+
+  <!-- Top Navigation Bar -->
+  <header class="border-b border-gray-800/80 bg-[#0d1322]/80 backdrop-blur-md px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-black font-black text-lg shadow-lg shadow-cyan-500/20">
+        <i class="fa-solid fa-microchip"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold tracking-tight text-white text-base">PocketAgent</span>
+          <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">Android LPU v1.0</span>
+        </div>
+        <p class="text-[11px] text-gray-400" data-i18n="tagline">Sub-Second Mobile OS Agent • Bézier Gestures • Human-in-the-Loop</p>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-3">
+      <!-- Language Switcher -->
+      <button onclick="toggleLanguage()" class="px-2.5 py-1.5 rounded-xl bg-gray-900 border border-gray-800 text-xs font-semibold text-gray-300 hover:text-cyan-400 transition flex items-center gap-1.5">
+        <i class="fa-solid fa-globe text-cyan-400"></i>
+        <span id="langLabel">EN / 中文</span>
+      </button>
+
+      <!-- Self-hosted BYOK Input -->
+      <div class="flex items-center gap-2 bg-gray-900 border border-gray-800 px-3 py-1.5 rounded-xl text-xs">
+        <i class="fa-solid fa-key text-amber-400"></i>
+        <input type="password" id="byokInput" placeholder="BYOK Groq Key (Self-hosted)" class="bg-transparent border-none outline-none text-xs text-gray-200 placeholder-gray-500 w-44 font-mono">
+      </div>
+
+      <!-- Action Credits Badge -->
+      <div id="creditBadge" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-900 border border-gray-800 text-xs font-mono text-cyan-400">
+        <i class="fa-solid fa-bolt text-yellow-400"></i>
+        <span data-i18n="credits_label">Credits:</span> <strong id="creditsVal">50</strong>
+      </div>
+
+      <!-- Upgrade to Pro Button -->
+      <button onclick="openModal('upgradeModal')" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-gray-950 font-bold text-xs shadow-md shadow-orange-500/20 transition flex items-center gap-1.5">
+        <i class="fa-solid fa-crown"></i>
+        <span id="upgradeBtnText" data-i18n="upgrade_btn">Upgrade to Pro</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Human-in-the-loop Safety Alert Banner -->
+  <div id="humanConfirmBanner" class="hidden bg-amber-500/15 border-b border-amber-500/40 px-6 py-3 flex items-center justify-between z-30 transition-all">
+    <div class="flex items-center gap-3">
+      <div class="w-8 h-8 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center text-sm border border-amber-500/40 animate-pulse">
+        <i class="fa-solid fa-shield-halved"></i>
+      </div>
+      <div>
+        <h4 class="text-xs font-bold text-amber-300" data-i18n="safety_title">Human-in-the-Loop Safety Boundary Triggered</h4>
+        <p id="humanPromptText" class="text-[11px] text-gray-300">Action paused for operator verification on phone screen.</p>
+      </div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="respondHumanConfirm('continue')" class="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shadow transition flex items-center gap-1.5">
+        <i class="fa-solid fa-check"></i>
+        <span data-i18n="confirm_continue">I Verified on Phone, Resume Execution</span>
+      </button>
+      <button onclick="respondHumanConfirm('abort')" class="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 text-xs font-bold transition">
+        <span data-i18n="abort_task">Abort Task</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Grid Layout -->
+  <main class="flex-1 grid grid-cols-12 gap-5 p-6 max-w-[1700px] w-full mx-auto">
+    
+    <!-- Left Column: Devices & Live Mirror (3.5 Cols) -->
+    <section class="col-span-12 lg:col-span-4 flex flex-col gap-4">
+      <!-- Device Selector Card -->
+      <div class="bg-[#0f172a]/90 border border-gray-800/80 rounded-2xl p-4 flex flex-col gap-3 shadow-xl">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-xs font-bold text-gray-300">
+            <i class="fa-solid fa-mobile-screen-button text-cyan-400"></i>
+            <span data-i18n="devices_title">Connected Android Devices / Emulators</span>
+          </div>
+          <button onclick="fetchDevices()" class="text-xs text-gray-400 hover:text-cyan-400 transition" title="Refresh Devices">
+            <i class="fa-solid fa-rotate-right"></i>
+          </button>
+        </div>
+
+        <div id="deviceList" class="flex flex-col gap-2 min-h-[50px] text-xs">
+          <!-- Dynamic Device Items -->
+        </div>
+
+        <!-- Connection Checklist if no device -->
+        <div id="deviceTroubleshoot" class="p-3 rounded-xl bg-gray-900/80 border border-gray-800 text-[11px] text-gray-400 flex flex-col gap-1.5">
+          <span class="font-bold text-gray-300 flex items-center gap-1.5 text-xs">
+            <i class="fa-solid fa-circle-question text-cyan-400"></i>
+            <span data-i18n="troubleshoot_title">Device Connection Guide:</span>
+          </span>
+          <ol class="list-decimal list-inside space-y-1 text-gray-400 leading-relaxed">
+            <li data-i18n="step1">Settings ➔ About Phone ➔ Tap <strong>Build Number 7 times</strong> to enable Developer Options.</li>
+            <li data-i18n="step2">Developer Options ➔ Turn <strong>ON "USB Debugging"</strong> (For Xiaomi: enable "USB Debugging (Security Settings)").</li>
+            <li data-i18n="step3">Unlock phone & check <strong>"Always allow from this computer"</strong> on prompt.</li>
+            <li data-i18n="step4">Set USB Mode from "Charge Only" to <strong>"File Transfer" (MTP)</strong>.</li>
+          </ol>
+        </div>
+
+        <div class="flex items-center gap-2 pt-2 border-t border-gray-800/60">
+          <button onclick="inspectLiveUI()" class="flex-1 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold transition flex items-center justify-center gap-1.5">
+            <i class="fa-solid fa-code text-cyan-400"></i>
+            <span data-i18n="inspect_btn">Inspect UI Tree (0ms)</span>
+          </button>
+          <button onclick="refreshScreen()" class="px-3.5 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs transition" title="Refresh Screen Snapshot">
+            <i class="fa-solid fa-camera"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Device Screen Card -->
+      <div class="bg-[#0f172a]/90 border border-gray-800/80 rounded-2xl p-4 flex flex-col gap-3 shadow-xl flex-1 items-center justify-center">
+        <div class="w-full flex items-center justify-between text-xs text-gray-400 pb-2 border-b border-gray-800">
+          <span data-i18n="mirror_title">Phone Live Mirror</span>
+          <span id="screenMeta" class="font-mono text-[11px] text-gray-500">Android ADB Native</span>
+        </div>
+        <div id="mirrorContainer" class="relative w-full aspect-[9/18.5] max-h-[560px] bg-black rounded-2xl border-2 border-gray-800 overflow-hidden flex items-center justify-center group shadow-2xl">
+          <img id="liveScreenshot" src="/api/screenshot" alt="Live Device Screen" class="w-full h-full object-contain" onerror="this.src='https://placehold.co/1080x2400/090d16/334155?text=Device+Connected+Via+USB'">
+          <div id="overlayLayer" class="absolute inset-0 pointer-events-none"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Center Column: Mission Goal & Core Skills (4.5 Cols) -->
+    <section class="col-span-12 lg:col-span-4 flex flex-col gap-4">
+      <!-- Mission Prompt Box -->
+      <div class="bg-[#0f172a]/90 border border-gray-800/80 rounded-2xl p-5 flex flex-col gap-4 shadow-xl">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2 text-xs font-bold text-gray-300">
+            <i class="fa-solid fa-wand-magic-sparkles text-cyan-400"></i>
+            <span data-i18n="goal_title">Mission Prompt</span>
+          </div>
+          <span class="text-[11px] text-cyan-400 font-mono flex items-center gap-1">
+            <i class="fa-solid fa-gauge-high"></i> Groq LPU Engine
+          </span>
+        </div>
+
+        <textarea id="goalInput" rows="3" placeholder="Instruct PocketAgent on your phone... (e.g. 'Open WeChat, search contact and send morning greeting' or 'Extract current article to 4K Cardify deck')" class="w-full bg-gray-900/90 border border-gray-800 rounded-xl p-3.5 text-xs text-gray-100 placeholder-gray-500 focus:outline-none focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 resize-none font-medium leading-relaxed"></textarea>
+
+        <!-- Execution Buttons -->
+        <div class="flex items-center gap-3">
+          <button id="btnStart" onclick="startTask()" class="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-400 hover:to-indigo-500 text-black font-extrabold text-xs shadow-lg shadow-cyan-500/25 transition flex items-center justify-center gap-2">
+            <i class="fa-solid fa-play"></i>
+            <span data-i18n="run_btn">Run Autonomous Agent</span>
+          </button>
+          <button id="btnStop" onclick="stopTask()" class="px-4 py-3 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 text-xs font-bold transition flex items-center gap-1.5">
+            <i class="fa-solid fa-stop"></i>
+            <span data-i18n="stop_btn">Stop</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Core Automation Skills -->
+      <div class="bg-[#0f172a]/90 border border-gray-800/80 rounded-2xl p-5 flex flex-col gap-3 shadow-xl flex-1">
+        <div class="flex items-center justify-between text-xs font-bold text-gray-300">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-cubes-stacked text-indigo-400"></i>
+            <span data-i18n="skills_title">Core Automation Skills</span>
+          </div>
+          <span class="text-[10px] text-gray-500" data-i18n="preset_hint">Quick Preset</span>
+        </div>
+
+        <div class="grid grid-cols-1 gap-2.5">
+          <!-- Skill 1: Cardify 4K -->
+          <div onclick="selectSkill('Extract article from current screen and transform into 4K McKinsey Cardify slide deck')" class="p-3.5 rounded-xl bg-gray-900/60 hover:bg-gray-800/80 border border-gray-800/80 hover:border-purple-500/50 cursor-pointer transition flex items-start gap-3 group">
+            <div class="w-8 h-8 rounded-lg bg-purple-500/10 text-purple-400 flex items-center justify-center text-sm shrink-0 border border-purple-500/30 group-hover:scale-110 transition">
+              <i class="fa-solid fa-layer-group"></i>
+            </div>
+            <div>
+              <h4 class="text-xs font-bold text-gray-200 group-hover:text-purple-400 transition" data-i18n="skill_cardify_title">Cardify 4K Visual Deck Generator</h4>
+              <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="skill_cardify_desc">Extracts long-form post from mobile screen and builds 4K executive slide deck instantly.</p>
+            </div>
+          </div>
+
+          <!-- Skill 2: E-commerce & Deals -->
+          <div onclick="selectSkill('Open food delivery app, search coffee deals under $2, claim discount coupons and add to cart')" class="p-3.5 rounded-xl bg-gray-900/60 hover:bg-gray-800/80 border border-gray-800/80 hover:border-amber-500/50 cursor-pointer transition flex items-start gap-3 group">
+            <div class="w-8 h-8 rounded-lg bg-amber-500/10 text-amber-400 flex items-center justify-center text-sm shrink-0 border border-amber-500/30 group-hover:scale-110 transition">
+              <i class="fa-solid fa-mug-hot"></i>
+            </div>
+            <div>
+              <h4 class="text-xs font-bold text-gray-200 group-hover:text-amber-400 transition" data-i18n="skill_deal_title">E-commerce Deals & Coupon Auto-Cart</h4>
+              <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="skill_deal_desc">Scans discount deals and adds to cart with human confirmation safety check before checkout.</p>
+            </div>
+          </div>
+
+          <!-- Skill 3: Messaging Assistant -->
+          <div onclick="selectSkill('Open messaging app, find File Transfer contact and send greeting message')" class="p-3.5 rounded-xl bg-gray-900/60 hover:bg-gray-800/80 border border-gray-800/80 hover:border-emerald-500/50 cursor-pointer transition flex items-start gap-3 group">
+            <div class="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-400 flex items-center justify-center text-sm shrink-0 border border-emerald-500/30 group-hover:scale-110 transition">
+              <i class="fa-solid fa-comments"></i>
+            </div>
+            <div>
+              <h4 class="text-xs font-bold text-gray-200 group-hover:text-emerald-400 transition" data-i18n="skill_msg_title">Smart Mobile Messaging Assistant</h4>
+              <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="skill_msg_desc">Navigates conversations, locates contacts and types contextual messages naturally.</p>
+            </div>
+          </div>
+
+          <!-- Skill 4: Social Media Engagement -->
+          <div onclick="selectSkill('Open social media app, search #AIAutomation, browse top posts and draft insightful comments')" class="p-3.5 rounded-xl bg-gray-900/60 hover:bg-gray-800/80 border border-gray-800/80 hover:border-cyan-500/50 cursor-pointer transition flex items-start gap-3 group">
+            <div class="w-8 h-8 rounded-lg bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-sm shrink-0 border border-cyan-500/30 group-hover:scale-110 transition">
+              <i class="fa-solid fa-hashtag"></i>
+            </div>
+            <div>
+              <h4 class="text-xs font-bold text-gray-200 group-hover:text-cyan-400 transition" data-i18n="skill_social_title">Social Engagement & Reply Drafter</h4>
+              <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="skill_social_desc">Simulates human gestures to browse feeds and drafts contextual high-value comments.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Real-time ReAct Action Stream (4 Cols) -->
+    <section class="col-span-12 lg:col-span-4 flex flex-col gap-4">
+      <div class="bg-[#0f172a]/90 border border-gray-800/80 rounded-2xl p-5 flex flex-col gap-3 shadow-xl h-full">
+        <div class="flex items-center justify-between pb-2 border-b border-gray-800">
+          <div class="flex items-center gap-2 text-xs font-bold text-gray-300">
+            <i class="fa-solid fa-terminal text-cyan-400"></i>
+            <span data-i18n="stream_title">ReAct Execution Stream</span>
+          </div>
+          <span id="runStatusBadge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-800 text-gray-400 border border-gray-700" data-i18n="status_idle">IDLE</span>
+        </div>
+
+        <!-- Scrollable Action Log -->
+        <div id="actionStream" class="flex-1 custom-scroll overflow-y-auto max-h-[640px] flex flex-col gap-2.5 pr-1 text-xs">
+          <div class="p-4 rounded-xl bg-gray-900/40 border border-gray-800/50 text-gray-500 text-center flex flex-col items-center gap-2 my-auto">
+            <i class="fa-solid fa-robot text-2xl text-gray-600"></i>
+            <span data-i18n="empty_log_hint">PocketAgent is online and awaiting command.<br>Enter a goal and click Run to start.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Upgrade Pro Modal with 5 Dodo Payments Live Products -->
+  <div id="upgradeModal" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50 hidden">
+    <div class="bg-[#0f172a] border border-gray-800 rounded-3xl max-w-2xl w-full p-6 flex flex-col gap-5 shadow-2xl relative">
+      <button onclick="closeModal('upgradeModal')" class="absolute top-5 right-5 text-gray-400 hover:text-white text-lg">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+
+      <div class="text-center">
+        <span class="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30" data-i18n="modal_badge">👑 PRO COMMERCIAL LICENSE</span>
+        <h2 class="text-xl font-extrabold text-white mt-2" data-i18n="modal_title">Unlock Unlimited Mobile AI Automation</h2>
+        <p class="text-xs text-gray-400 mt-1" data-i18n="modal_subtitle">Instant License issuance via Dodo Payments (Credit Card, Apple Pay, Google Pay)</p>
+      </div>
+
+      <!-- Pricing Plans Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Solo Pro Plan -->
+        <div class="p-5 rounded-2xl bg-gradient-to-b from-gray-900 to-gray-900/60 border-2 border-cyan-500/50 flex flex-col justify-between relative overflow-hidden shadow-lg shadow-cyan-500/10">
+          <span class="absolute top-0 right-0 bg-cyan-500 text-black text-[10px] font-black px-3 py-0.5 rounded-bl-xl uppercase tracking-wider" data-i18n="most_popular">Most Popular</span>
+          <div>
+            <h3 class="text-sm font-extrabold text-white" data-i18n="solo_title">Solo Pro Edition</h3>
+            <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="solo_desc">For creators & power users</p>
+            <div class="mt-3 flex items-baseline gap-1">
+              <span class="text-2xl font-black text-cyan-400">$19.9</span>
+              <span class="text-xs text-gray-500" data-i18n="per_month">/ mo</span>
+            </div>
+            <ul class="text-xs text-gray-300 mt-3 flex flex-col gap-1.5">
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-cyan-400"></i> <span data-i18n="solo_f1">1,500 Action Credits / mo</span></li>
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-cyan-400"></i> <span data-i18n="solo_f2">All Core Skills Unlocked</span></li>
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-cyan-400"></i> <span data-i18n="solo_f3">Full Android Real & Emulator Support</span></li>
+            </ul>
+          </div>
+          <div class="flex flex-col gap-2 mt-4">
+            <a href="{{ payment_links.solo_pro_monthly }}" target="_blank" class="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs text-center transition" data-i18n="buy_solo_monthly">Buy Monthly ($19.99)</a>
+            <a href="{{ payment_links.solo_pro_annual }}" target="_blank" class="w-full py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-cyan-400 font-bold text-xs text-center transition border border-cyan-500/30" data-i18n="buy_solo_annual">Buy Annual ($149.00 - Save 38%)</a>
+          </div>
+        </div>
+
+        <!-- Studio Plan -->
+        <div class="p-5 rounded-2xl bg-gradient-to-b from-gray-900 to-gray-900/60 border border-gray-800 flex flex-col justify-between">
+          <div>
+            <h3 class="text-sm font-extrabold text-white" data-i18n="studio_title">Studio Agency Plan</h3>
+            <p class="text-[11px] text-gray-400 mt-0.5" data-i18n="studio_desc">For teams & automation matrices</p>
+            <div class="mt-3 flex items-baseline gap-1">
+              <span class="text-2xl font-black text-amber-400">$99.0</span>
+              <span class="text-xs text-gray-500" data-i18n="per_month">/ mo</span>
+            </div>
+            <ul class="text-xs text-gray-300 mt-3 flex flex-col gap-1.5">
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-amber-400"></i> <span data-i18n="studio_f1">15,000 Action Credits / mo</span></li>
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-amber-400"></i> <span data-i18n="studio_f2">5~10 Emulators Concurrency</span></li>
+              <li class="flex items-center gap-1.5"><i class="fa-solid fa-check text-amber-400"></i> <span data-i18n="studio_f3">VIP Anti-Ban Script Support</span></li>
+            </ul>
+          </div>
+          <div class="flex flex-col gap-2 mt-4">
+            <a href="{{ payment_links.studio_monthly }}" target="_blank" class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs text-center transition" data-i18n="buy_studio_monthly">Buy Studio ($99.00)</a>
+            <a href="{{ payment_links.studio_annual }}" target="_blank" class="w-full py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-amber-400 font-bold text-xs text-center transition border border-amber-500/30" data-i18n="buy_studio_annual">Buy Annual ($699.00 - Save 41%)</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Refill Credits & License Input -->
+      <div class="p-4 rounded-2xl bg-gray-900 border border-gray-800 flex items-center justify-between">
+        <div>
+          <span class="text-xs font-bold text-gray-200" data-i18n="refill_title">⚡ 1,000 Action Credits Refill Pack</span>
+          <p class="text-[11px] text-gray-400" data-i18n="refill_desc">Non-expiring top-up credits for heavy runs</p>
+        </div>
+        <a href="{{ payment_links.credits_topup }}" target="_blank" class="px-4 py-2 rounded-xl bg-gray-800 hover:bg-gray-700 text-yellow-400 font-bold text-xs border border-yellow-500/30 transition" data-i18n="refill_btn">Refill ($9.90)</a>
+      </div>
+
+      <!-- License Key Activation -->
+      <div class="flex items-center gap-2 pt-2 border-t border-gray-800">
+        <input type="text" id="licenseKeyInput" placeholder="Enter License Key from receipt (e.g. PKT-XXXX-XXXX-XXXX)" class="flex-1 bg-gray-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-500 outline-none font-mono">
+        <button onclick="activateProLicense()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-bold text-xs transition" data-i18n="activate_btn">Activate Key</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentLang = 'en';
+    let pollTimer = null;
+    let mirrorRefreshTimer = null;
+
+    const I18N = {
+      en: {
+        tagline: "Sub-Second Mobile OS Agent • Bézier Gestures • Human-in-the-Loop",
+        credits_label: "Credits:",
+        upgrade_btn: "Upgrade to Pro",
+        safety_title: "Human-in-the-Loop Safety Boundary Triggered",
+        confirm_continue: "I Verified on Phone, Resume Execution",
+        abort_task: "Abort Task",
+        devices_title: "Connected Android Devices / Emulators",
+        troubleshoot_title: "Device Connection Guide:",
+        step1: "Settings ➔ About Phone ➔ Tap <strong>Build Number 7 times</strong> to enable Developer Options.",
+        step2: "Developer Options ➔ Turn <strong>ON \"USB Debugging\"</strong> (For Xiaomi: enable \"USB Debugging (Security Settings)\").",
+        step3: "Unlock phone & check <strong>\"Always allow from this computer\"</strong> on prompt.",
+        step4: "Set USB Mode from \"Charge Only\" to <strong>\"File Transfer\" (MTP)</strong>.",
+        inspect_btn: "Inspect UI Tree (0ms)",
+        mirror_title: "Phone Live Mirror",
+        goal_title: "Mission Prompt",
+        run_btn: "Run Autonomous Agent",
+        stop_btn: "Stop",
+        skills_title: "Core Automation Skills",
+        preset_hint: "Quick Preset",
+        skill_cardify_title: "Cardify 4K Visual Deck Generator",
+        skill_cardify_desc: "Extracts long-form post from mobile screen and builds 4K executive slide deck instantly.",
+        skill_deal_title: "E-commerce Deals & Coupon Auto-Cart",
+        skill_deal_desc: "Scans discount deals and adds to cart with human confirmation safety check before checkout.",
+        skill_msg_title: "Smart Mobile Messaging Assistant",
+        skill_msg_desc: "Navigates conversations, locates contacts and types contextual messages naturally.",
+        skill_social_title: "Social Engagement & Reply Drafter",
+        skill_social_desc: "Simulates human gestures to browse feeds and drafts contextual high-value comments.",
+        stream_title: "ReAct Execution Stream",
+        status_idle: "IDLE",
+        empty_log_hint: "PocketAgent is online and awaiting command.<br>Enter a goal and click Run to start.",
+        modal_badge: "👑 PRO COMMERCIAL LICENSE",
+        modal_title: "Unlock Unlimited Mobile AI Automation",
+        modal_subtitle: "Instant License issuance via Dodo Payments (Credit Card, Apple Pay, Google Pay)",
+        most_popular: "Most Popular",
+        solo_title: "Solo Pro Edition",
+        solo_desc: "For creators & power users",
+        per_month: "/ mo",
+        solo_f1: "1,500 Action Credits / mo",
+        solo_f2: "All Core Skills Unlocked",
+        solo_f3: "Full Android Real & Emulator Support",
+        buy_solo_monthly: "Buy Monthly ($19.99)",
+        buy_solo_annual: "Buy Annual ($149.00 - Save 38%)",
+        studio_title: "Studio Agency Plan",
+        studio_desc: "For teams & automation matrices",
+        studio_f1: "15,000 Action Credits / mo",
+        studio_f2: "5~10 Emulators Concurrency",
+        studio_f3: "VIP Anti-Ban Script Support",
+        buy_studio_monthly: "Buy Studio ($99.00)",
+        buy_studio_annual: "Buy Annual ($699.00 - Save 41%)",
+        refill_title: "⚡ 1,000 Action Credits Refill Pack",
+        refill_desc: "Non-expiring top-up credits for heavy runs",
+        refill_btn: "Refill ($9.90)",
+        activate_btn: "Activate Key"
+      },
+      zh: {
+        tagline: "毫秒级手机智能体 • 贝塞尔拟人触控 • 人机协同安全防护",
+        credits_label: "执行点数:",
+        upgrade_btn: "升级 Pro VIP",
+        safety_title: "触发人机协同安全边界 (Human-in-the-Loop)",
+        confirm_continue: "我已在手机上确认，继续执行",
+        abort_task: "终止任务",
+        devices_title: "已连接的 Android 设备 / 模拟器",
+        troubleshoot_title: "手机连接排错指南：",
+        step1: "设置 ➔ 关于手机 ➔ 连续点击<strong>版本号 7 次</strong>开启开发者选项。",
+        step2: "开发者选项 ➔ 开启<strong>【USB 调试】</strong>（小米手机需同时开启【USB 调试-安全设置】）。",
+        step3: "解锁手机屏幕，在弹出窗口勾选<strong>【始终允许此计算机】</strong>并点击确定。",
+        step4: "下拉状态栏将 USB 连接方式从“仅充电”改为<strong>“传输文件”(MTP)</strong>。",
+        inspect_btn: "探测 UI 树 (0ms)",
+        mirror_title: "手机实时镜像 (Live Mirror)",
+        goal_title: "自然语言意图指令",
+        run_btn: "启动自动化执行",
+        stop_btn: "终止",
+        skills_title: "高频核心技能预设",
+        preset_hint: "一键填入",
+        skill_cardify_title: "Cardify 4K 奢华卡包生成",
+        skill_cardify_desc: "从手机当前屏幕长文自动提炼核心要点并构建 4K 麦肯锡级信息卡片。",
+        skill_deal_title: "电商/外卖自动比价与领券加购",
+        skill_deal_desc: "自动检索低价好物与优惠券，支付环节自动触发人机安全确认。",
+        skill_msg_title: "微信/通讯精准发信助手",
+        skill_msg_desc: "精准定位联系人并输入上下文回复，告别繁琐手动操作。",
+        skill_social_title: "社媒矩阵拟人互动与评论拟稿",
+        skill_social_desc: "贝塞尔平滑滑动浏览笔记，智能拟写高赞评论。",
+        stream_title: "ReAct 决策执行流",
+        status_idle: "就绪 IDLE",
+        empty_log_hint: "PocketAgent 已待命。<br>输入指令或选择技能预设后点击启动。",
+        modal_badge: "👑 VIP PRO 商业授权",
+        modal_title: "解锁无限量手机 AI 自动化操控能力",
+        modal_subtitle: "支持 Dodo Payments 国际信用卡、Apple Pay、Google Pay",
+        most_popular: "最受欢迎",
+        solo_title: "Solo Pro 个人专业版",
+        solo_desc: "适合个人创作者与极客",
+        per_month: "/ 月",
+        solo_f1: "每月 1,500 点执行点数",
+        solo_f2: "解锁所有商业技能库",
+        solo_f3: "支持全系列 Android 真机与模拟器",
+        buy_solo_monthly: "购买月付 ($19.99)",
+        buy_solo_annual: "购买年付 ($149.00 - 省 38%)",
+        studio_title: "Studio 工作室版",
+        studio_desc: "适合跨境矩阵与电商团队",
+        studio_f1: "每月 15,000 点执行点数",
+        studio_f2: "支持 5~10 台手机模拟器并发",
+        studio_f3: "VIP 防风控定制脚本支持",
+        buy_studio_monthly: "购买 Studio 月付 ($99.00)",
+        buy_studio_annual: "购买年付 ($699.00 - 省 41%)",
+        refill_title: "⚡ 1,000 点数充值加油包",
+        refill_desc: "点数永久不过期，适合高频批量加量",
+        refill_btn: "立即充值 ($9.90)",
+        activate_btn: "激活 License"
+      }
+    };
+
+    function toggleLanguage() {
+      currentLang = currentLang === 'en' ? 'zh' : 'en';
+      applyLanguage(currentLang);
+    }
+
+    function applyLanguage(lang) {
+      const dict = I18N[lang] || I18N.en;
+      document.querySelectorAll('[data-i18n]').forEach(el => {
+        const key = el.getAttribute('data-i18n');
+        if (dict[key]) el.innerHTML = dict[key];
+      });
+      document.getElementById('langLabel').innerText = lang === 'en' ? 'EN / 中文' : '中文 / EN';
+    }
+
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function selectSkill(prompt) {
+      document.getElementById('goalInput').value = prompt;
+    }
+
+    async function fetchDevices() {
+      try {
+        const res = await fetch('/api/devices');
+        const data = await res.json();
+        const list = document.getElementById('deviceList');
+        const troubleshoot = document.getElementById('deviceTroubleshoot');
+        list.innerHTML = '';
+        
+        if (!data.devices || data.devices.length === 0) {
+          troubleshoot.classList.remove('hidden');
+          list.innerHTML = `
+            <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 flex items-center justify-between text-xs">
+              <span class="flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation"></i> No Android device detected. Check USB cable & debugging.</span>
+            </div>`;
+        } else {
+          troubleshoot.classList.add('hidden');
+          data.devices.forEach(d => {
+            let statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">ONLINE</span>`;
+            if (d.status === 'unauthorized') {
+              statusBadge = `<span class="px-2 py-0.5 rounded text-[10px] uppercase font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse">UNAUTHORIZED</span>`;
+            }
+            list.innerHTML += `
+              <div class="p-2.5 rounded-xl bg-gray-900 border border-cyan-500/40 text-gray-200 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-mobile-screen text-cyan-400 text-sm"></i>
+                  <div>
+                    <div class="font-mono font-bold text-xs">${d.id}</div>
+                    <div class="text-[10px] text-gray-400">${d.model || d.type}</div>
+                  </div>
+                </div>
+                <div>${statusBadge}</div>
+              </div>
+              ${d.status === 'unauthorized' ? `<div class="p-2 bg-amber-500/10 text-amber-300 text-[10px] rounded-lg border border-amber-500/30">${d.message}</div>` : ''}
+            `;
+          });
+          if (data.screen_size) {
+            document.getElementById('screenMeta').innerText = `${data.screen_size[0]} × ${data.screen_size[1]}`;
+          }
+          refreshScreen();
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function refreshScreen() {
+      const img = document.getElementById('liveScreenshot');
+      img.src = '/api/screenshot?t=' + Date.now();
+    }
+
+    async function inspectLiveUI() {
+      try {
+        const res = await fetch('/api/inspect_ui');
+        const data = await res.json();
+        const stream = document.getElementById('actionStream');
+        stream.innerHTML = `
+          <div class="p-3 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs flex flex-col gap-1">
+            <strong class="flex items-center gap-1.5"><i class="fa-solid fa-microscope"></i> UI Hierarchy Captured:</strong>
+            <span>Found ${data.count} interactive nodes on screen.</span>
+          </div>` + stream.innerHTML;
+        refreshScreen();
+      } catch (e) {
+        alert('UI Inspection error: ' + e.message);
+      }
+    }
+
+    async function startTask() {
+      const goal = document.getElementById('goalInput').value.trim();
+      const byok = document.getElementById('byokInput').value.trim();
+      if (!goal) return alert('Please enter a goal prompt for PocketAgent!');
+
+      try {
+        const res = await fetch('/api/execute_task', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ goal, byok_key: byok })
+        });
+        const data = await res.json();
+        if (data.status === 'started') {
+          document.getElementById('runStatusBadge').innerText = 'RUNNING';
+          document.getElementById('runStatusBadge').className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-cyan-500 text-black animate-pulse';
+          startPolling();
+        } else {
+          alert(data.message);
+          if (data.status === 'exhausted') openModal('upgradeModal');
+        }
+      } catch (e) {
+        alert('Failed to start task: ' + e.message);
+      }
+    }
+
+    async function stopTask() {
+      await fetch('/api/stop_task', { method: 'POST' });
+      document.getElementById('runStatusBadge').innerText = 'STOPPED';
+      document.getElementById('runStatusBadge').className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-400 border border-rose-500/30';
+      document.getElementById('humanConfirmBanner').classList.add('hidden');
+    }
+
+    async function respondHumanConfirm(action) {
+      await fetch('/api/human_confirm_action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action })
+      });
+      document.getElementById('humanConfirmBanner').classList.add('hidden');
+    }
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = setInterval(async () => {
+        try {
+          const res = await fetch('/api/task_status');
+          const data = await res.json();
+          document.getElementById('creditsVal').innerText = data.credits;
+
+          const banner = document.getElementById('humanConfirmBanner');
+          if (data.is_paused_for_human) {
+            banner.classList.remove('hidden');
+            document.getElementById('humanPromptText').innerText = data.human_prompt_message || 'Action paused for operator confirmation.';
+          } else {
+            banner.classList.add('hidden');
+          }
+          
+          if (data.logs && data.logs.length > 0) {
+            const stream = document.getElementById('actionStream');
+            stream.innerHTML = data.logs.map(log => {
+              let icon = 'fa-arrow-right';
+              let badgeBg = 'bg-gray-900 border-gray-800 text-gray-300';
+              if (log.type === 'action') { icon = 'fa-hand-pointer'; badgeBg = 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/30'; }
+              if (log.type === 'thinking') { icon = 'fa-brain'; badgeBg = 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/30'; }
+              if (log.type === 'human_confirm') { icon = 'fa-shield-halved'; badgeBg = 'bg-amber-500/20 text-amber-300 border border-amber-500/40'; }
+              if (log.type === 'success') { icon = 'fa-circle-check'; badgeBg = 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'; }
+              if (log.type === 'abort' || log.type === 'error') { icon = 'fa-circle-exclamation'; badgeBg = 'bg-rose-500/20 text-rose-300 border border-rose-500/40'; }
+
+              return `
+                <div class="p-3 rounded-xl border ${badgeBg} flex flex-col gap-1">
+                  <div class="flex items-center justify-between text-[11px]">
+                    <span class="font-bold flex items-center gap-1.5">
+                      <i class="fa-solid ${icon}"></i>
+                      ${log.tool || log.type.toUpperCase()}
+                    </span>
+                    <span class="font-mono text-[10px] opacity-75">Step ${log.step}</span>
+                  </div>
+                  <p class="text-xs mt-0.5 leading-relaxed">${log.message}</p>
+                </div>
+              `;
+            }).reverse().join('');
+          }
+
+          if (!data.is_running) {
+            clearInterval(pollTimer);
+            document.getElementById('runStatusBadge').innerText = 'IDLE';
+            document.getElementById('runStatusBadge').className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-gray-800 text-gray-400 border border-gray-700';
+            refreshScreen();
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }, 1000);
+    }
+
+    async function activateProLicense() {
+      const key = document.getElementById('licenseKeyInput').value.trim();
+      if (!key) return alert('Please enter your license key!');
+      const res = await fetch('/api/activate_license', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key })
+      });
+      const data = await res.json();
+      alert(data.message);
+      if (data.status === 'success') {
+        document.getElementById('upgradeBtnText').innerText = '👑 Pro VIP Active';
+        closeModal('upgradeModal');
+      }
+    }
+
+    // Auto-refresh mirror periodically
+    setInterval(refreshScreen, 3000);
+
+    // Initial setup
+    fetchDevices();
+  </script>
+</body>
+</html>

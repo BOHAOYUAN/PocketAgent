@@ -1,0 +1,27 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Database & Runtime artifacts
+*.db
+licenses.db
+static/step_*.png
+static/screenshot.png
+static/stream_frame.png
+
+# Binaries & Downloads (Will be auto-downloaded on first run)
+bin/platform-tools.zip
+
+# IDEs & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
