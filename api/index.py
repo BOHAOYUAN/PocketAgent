@@ -2,9 +2,7 @@ import os
 import sqlite3
 import secrets
 import json
-from flask import Flask, request, jsonify, render_template_string
-
-app = Flask(__name__)
+from http.server import BaseHTTPRequestHandler
 
 DB_PATH = "/tmp/licenses.db"
 
@@ -47,8 +45,7 @@ def generate_license_key(prefix="PKT"):
     random_part = secrets.token_hex(6).upper()
     return f"{prefix}-{random_part[:4]}-{random_part[4:8]}-{random_part[8:]}"
 
-LANDING_HTML = """
-<!DOCTYPE html>
+LANDING_HTML = """<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -73,87 +70,125 @@ LANDING_HTML = """
         </div>
     </div>
 </body>
-</html>
-"""
+</html>"""
 
-@app.route("/", methods=["GET"])
-@app.route("/api", methods=["GET"])
-@app.route("/api/index", methods=["GET"])
-def root():
-    return render_template_string(LANDING_HTML)
+class handler(BaseHTTPRequestHandler):
+    def _send_cors_headers(self):
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-@app.route("/api/health", methods=["GET"])
-def health():
-    return jsonify({"status": "healthy", "service": "PocketAgent Cloud Webhook & License API"})
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self._send_cors_headers()
+        self.end_headers()
 
-@app.route("/api/webhook/dodo", methods=["POST"])
-def dodo_webhook():
-    init_db()
-    try:
-        payload = request.get_json(force=True, silent=True) or {}
-    except Exception:
-        return jsonify({"error": "Invalid JSON payload"}), 400
+    def do_GET(self):
+        init_db()
+        path = self.path.split("?")[0]
+        if path in ["/api/health"]:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "healthy", "service": "PocketAgent Cloud Webhook & License API"}).encode("utf-8"))
+        else:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(LANDING_HTML.encode("utf-8"))
 
-    data = payload.get("data", {})
-    product_id = data.get("product_id") or data.get("product", {}).get("product_id") or "pdt_0NlgHtNsDlqTjbFUwWUn0"
-    customer = data.get("customer", {})
-    email = customer.get("email", "customer@pocketagent.ai")
-    name = customer.get("name", "Valued Customer")
+    def do_POST(self):
+        init_db()
+        path = self.path.split("?")[0]
+        content_length = int(self.headers.get("Content-Length", 0))
+        body_bytes = self.rfile.read(content_length) if content_length > 0 else b"{}"
+        
+        try:
+            payload = json.loads(body_bytes.decode("utf-8"))
+        except Exception:
+            payload = {}
 
-    tier_info = PRODUCT_TIERS.get(product_id, {"name": "Custom Tier", "credits": 1000, "tier": "standard"})
-    license_key = generate_license_key()
-    
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO licenses (license_key, product_id, product_name, customer_email, customer_name, credits_remaining, tier, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-        """, (license_key, product_id, tier_info["name"], email, name, tier_info["credits"], tier_info["tier"]))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"[DB INSERT ERROR]: {e}")
+        if path.endswith("/api/webhook/dodo") or "dodo" in path:
+            data = payload.get("data", {})
+            product_id = data.get("product_id") or data.get("product", {}).get("product_id") or "pdt_0NlgHtNsDlqTjbFUwWUn0"
+            customer = data.get("customer", {})
+            email = customer.get("email", "customer@pocketagent.ai")
+            name = customer.get("name", "Valued Customer")
 
-    return jsonify({
-        "status": "success",
-        "message": "License generated and issued.",
-        "license_key": license_key,
-        "credits": tier_info["credits"]
-    })
+            tier_info = PRODUCT_TIERS.get(product_id, {"name": "Custom Tier", "credits": 1000, "tier": "standard"})
+            license_key = generate_license_key()
 
-@app.route("/api/license/verify", methods=["POST"])
-def verify_license():
-    init_db()
-    data = request.get_json(force=True, silent=True) or {}
-    key = data.get("license_key", "").strip()
-    if not key:
-        return jsonify({"valid": False, "message": "License Key is required."}), 400
+            try:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("""
+                    INSERT INTO licenses (license_key, product_id, product_name, customer_email, customer_name, credits_remaining, tier, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
+                """, (license_key, product_id, tier_info["name"], email, name, tier_info["credits"], tier_info["tier"]))
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                print(f"[DB INSERT ERROR]: {e}")
 
-    try:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT license_key, product_name, credits_remaining, tier, status FROM licenses WHERE license_key = ?", (key,))
-        row = cursor.fetchone()
-        conn.close()
-    except Exception as e:
-        return jsonify({"valid": False, "message": f"Database error: {e}"})
+            resp_data = {
+                "status": "success",
+                "message": "License generated and issued.",
+                "license_key": license_key,
+                "credits": tier_info["credits"]
+            }
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps(resp_data).encode("utf-8"))
 
-    if not row:
-        return jsonify({"valid": False, "message": "License Key not found."})
+        elif path.endswith("/api/license/verify") or "verify" in path:
+            key = payload.get("license_key", "").strip()
+            if not key:
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"valid": False, "message": "License Key is required."}).encode("utf-8"))
+                return
 
-    lic_key, prod_name, credits, tier, status = row
-    if status != "active":
-        return jsonify({"valid": False, "message": f"License is currently {status}."})
+            try:
+                conn = get_db()
+                cursor = conn.cursor()
+                cursor.execute("SELECT license_key, product_name, credits_remaining, tier, status FROM licenses WHERE license_key = ?", (key,))
+                row = cursor.fetchone()
+                conn.close()
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self._send_cors_headers()
+                self.end_headers()
+                self.wfile.write(json.dumps({"valid": False, "message": f"Database error: {e}"}).encode("utf-8"))
+                return
 
-    return jsonify({
-        "valid": True,
-        "license_key": lic_key,
-        "product_name": prod_name,
-        "credits_remaining": credits,
-        "tier": tier,
-        "status": status
-    })
+            if not row:
+                resp_data = {"valid": False, "message": "License Key not found."}
+            else:
+                lic_key, prod_name, credits, tier, status = row
+                resp_data = {
+                    "valid": status == "active",
+                    "license_key": lic_key,
+                    "product_name": prod_name,
+                    "credits_remaining": credits,
+                    "tier": tier,
+                    "status": status
+                }
 
-if __name__ == "__main__":
-    app.run(port=8000)
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps(resp_data).encode("utf-8"))
+        else:
+            self.send_response(404)
+            self.send_header("Content-Type", "application/json")
+            self._send_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Endpoint not found"}).encode("utf-8"))
