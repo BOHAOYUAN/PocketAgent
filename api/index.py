@@ -1,19 +1,13 @@
 import os
 import sqlite3
 import secrets
-import time
-from datetime import datetime
+import json
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-try:
-    from mangum import Mangum
-except ImportError:
-    Mangum = None
-
-# FastAPI ASGI Instance for Vercel
+# Standard FastAPI app for Vercel
 app = FastAPI(title="PocketAgent Cloud Engine", version="1.0.0")
 
 app.add_middleware(
@@ -24,7 +18,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Writable SQLite on Vercel Serverless
 DB_PATH = "/tmp/licenses.db"
 
 def get_db():
@@ -54,7 +47,6 @@ def init_db():
     except Exception as e:
         print(f"[DB ERROR]: {e}")
 
-# Dodo Product Mapping Matrix
 PRODUCT_TIERS = {
     "pdt_0NlgHtNsDlqTjbFUwWUn0": {"name": "Solo Pro Monthly ($19.99)", "credits": 1500, "tier": "solo_pro"},
     "pdt_0NlgInUdPXvUMK0Rh7Gq5": {"name": "Solo Pro Annual ($149.00)", "credits": 18000, "tier": "solo_pro_annual"},
@@ -68,6 +60,8 @@ def generate_license_key(prefix="PKT"):
     return f"{prefix}-{random_part[:4]}-{random_part[4:8]}-{random_part[8:]}"
 
 @app.get("/", response_class=HTMLResponse)
+@app.get("/api", response_class=HTMLResponse)
+@app.get("/api/index", response_class=HTMLResponse)
 def root():
     return """
     <!DOCTYPE html>
@@ -169,9 +163,3 @@ def verify_license(req: LicenseVerifyRequest):
         "tier": tier,
         "status": status
     }
-
-# Mangum serverless handler for AWS Lambda / Vercel Python runtime
-if Mangum is not None:
-    handler = Mangum(app, lifespan="off")
-else:
-    handler = app
